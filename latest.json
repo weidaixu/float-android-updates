@@ -1,0 +1,8 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "apkUrl": "https://github.com/weidaixu/float-android-updates/releases/download/v1.1.0/Float-Android-v1.1.0.apk",
+  "sha256": "48DC522BA831D3F3010A6D7B0FD9AD3FD7C19E869B835355CAE0928075D8CA8F",
+  "notes": "新增应用内自动更新；新增悬浮通知和锁屏通知；修复安卓备份导出。",
+  "mandatory": false
+}
