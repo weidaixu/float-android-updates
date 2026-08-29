@@ -43,7 +43,7 @@ import { TransferTargetModal } from "./transfer-target-modal";
 import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
-import { loadBindingConfig, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
+import { loadApiConfigs, loadBindingConfig, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateGroupChatCompletion, generateGroupOfflineChatCompletion, parseGroupChatResponse, buildEditableGroupRoundText } from "@/lib/group-chat-engine";
 import { appendChatOfflineTurn, deleteChatOfflineTurn, deleteChatOfflineTurnsFrom, extractThinkingTag, loadChatOfflineTurns, parseOfflineResponse, saveChatOfflineTurns, updateChatOfflineTurn, type ChatOfflineTurn } from "@/lib/chat-offline-storage";
 import { applyDisplayRegex, applyEditRegex } from "@/lib/llm-prompt-assembler";
@@ -96,6 +96,7 @@ import type { PendingAttachment } from "@/lib/chat-attachments/types";
 import { storeMediaBlob } from "@/lib/media-cache-storage";
 import { extractPublicUrls } from "@/lib/link-analysis/url-detection";
 import { resolvePublicLink } from "@/lib/link-analysis/link-resolver";
+import { assertPartsSupported, resolveModelCapabilities } from "@/lib/chat-attachments/model-capabilities";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -3972,6 +3973,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const readyAttachments = options?.attachments || [];
         if (!trimmed && readyAttachments.length === 0) return false;
 
+        if (readyAttachments.length) {
+            const binding = resolveBinding(loadBindingConfig(), session.contactId, "chat");
+            const apiConfig = loadApiConfigs().find(item => item.id === binding.apiConfigId);
+            if (apiConfig) {
+                try {
+                    assertPartsSupported(readyAttachments.flatMap(item => item.parts || []), resolveModelCapabilities(apiConfig));
+                } catch (error) {
+                    showChatToast(error instanceof Error ? error.message : "当前模型不支持该附件", 4000);
+                    return false;
+                }
+            }
+        }
+
         // Cancel any pending follow-up for this session
         cancelFollowUp(session.id);
 
@@ -4010,17 +4024,24 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 }
             }
             for (const attachment of readyAttachments) {
-                if (attachment.kind !== "image") continue;
-                const mediaRef = await storeMediaBlob(attachment.file, attachment.mimeType, "image");
-                const mediaMessage = pushChatMessage({
-                    sessionId: session.id,
-                    role: "user",
-                    content: attachment.name,
-                    mediaType: "media_file",
-                    mediaUrl: mediaRef,
-                    mediaData: { fileType: "image", fileName: attachment.name, label: attachment.name },
-                });
-                setMessages(prev => [...prev, mediaMessage]);
+                const images = attachment.kind === "image"
+                    ? [{ blob: attachment.file as Blob, name: attachment.name }]
+                    : await Promise.all((attachment.parts || []).filter(part => part.type === "image").map(async (part) => ({
+                        blob: await (await fetch(part.dataUrl)).blob(),
+                        name: part.sourceName || attachment.name,
+                    })));
+                for (const image of images) {
+                    const mediaRef = await storeMediaBlob(image.blob, image.blob.type || "image/jpeg", "image");
+                    const mediaMessage = pushChatMessage({
+                        sessionId: session.id,
+                        role: "user",
+                        content: image.name,
+                        mediaType: "media_file",
+                        mediaUrl: mediaRef,
+                        mediaData: { fileType: "image", fileName: image.name, label: image.name },
+                    });
+                    setMessages(prev => [...prev, mediaMessage]);
+                }
             }
             const visibleText = currentText || `发送了文件：${readyAttachments.map(item => item.name).join("、")}`;
             const newMsg = pushChatMessage({

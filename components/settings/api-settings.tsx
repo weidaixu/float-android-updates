@@ -436,6 +436,22 @@ export function ApiSettings() {
 
                                         <div className="ui-toggle-row mt-2">
                                             <span className="flex min-w-0 flex-col">
+                                                <span className="menu-label font-medium">模型支持附件图片</span>
+                                                <span className="menu-desc">未知或中转模型需要手动声明，错误开启可能导致 API 报错</span>
+                                            </span>
+                                            <Toggle checked={config.capabilities?.image === true} onChange={(v) => updateConfig(config.id, { capabilities: { ...config.capabilities, image: v } })} />
+                                        </div>
+
+                                        <div className="ui-toggle-row mt-2">
+                                            <span className="flex min-w-0 flex-col">
+                                                <span className="menu-label font-medium">模型支持音频输入</span>
+                                                <span className="menu-desc">仅对明确支持 input_audio 的模型开启</span>
+                                            </span>
+                                            <Toggle checked={config.capabilities?.audioInput === true} onChange={(v) => updateConfig(config.id, { capabilities: { ...config.capabilities, audioInput: v } })} />
+                                        </div>
+
+                                        <div className="ui-toggle-row mt-2">
+                                            <span className="flex min-w-0 flex-col">
                                                 <span className="menu-label font-medium">防胡言乱语</span>
                                                 <span className="menu-desc">防止没有用户输入时胡言乱语</span>
                                             </span>
