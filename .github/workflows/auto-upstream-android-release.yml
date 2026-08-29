@@ -130,7 +130,9 @@ jobs:
       - name: Run Android tests and build APK
         if: steps.detect.outputs.run_build == 'true'
         working-directory: android-wrapper/android
-        run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon
 
       - name: Verify package and signing certificate
         if: steps.detect.outputs.run_build == 'true'
