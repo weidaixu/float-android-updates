@@ -8,6 +8,7 @@ import {
     isNativeGoogleApi,
     stripHallucinatedTimestamps,
 } from "./api-helpers";
+import { resolveModelCapabilities } from "./chat-attachments/model-capabilities.ts";
 
 export type LlmProviderKind = "openai-compatible" | "anthropic" | "gemini";
 export type NativeToolProtocol = "openai-compatible" | "anthropic" | "gemini";
@@ -227,12 +228,24 @@ function splitLeadingSystemMessages(messages: LlmRequestMessage[]): { systemText
 function stripVisionParts(messages: LlmRequestMessage[]): LlmRequestMessage[] {
     return messages.map((message) => {
         if (!Array.isArray(message.content)) return message;
-        const text = message.content
-            .map((part) => part.type === "text" ? part.text : "[图片]")
-            .filter(Boolean)
-            .join("\n");
-        return { ...message, content: text };
+        const parts = message.content
+            .map((part): LLMContentPart => part.type === "image_url"
+                ? { type: "text", text: "[图片]" }
+                : part)
+            .filter((part) => part.type !== "text" || Boolean(part.text));
+        if (message.role === "assistant" || message.role === "tool") {
+            return { ...message, content: textFromContent(parts) };
+        }
+        return { ...message, content: parts };
     });
+}
+
+function assertRequestMediaSupported(config: ApiConfig, messages: LlmRequestMessage[]): void {
+    const hasAudio = messages.some((message) => Array.isArray(message.content)
+        && message.content.some((part) => part.type === "input_audio"));
+    if (hasAudio && !resolveModelCapabilities(config).audioInput) {
+        throw new Error("当前模型不支持音频输入。请在 API 配置中选择支持音频的模型。");
+    }
 }
 
 export function buildProviderRequest(
@@ -244,6 +257,7 @@ export function buildProviderRequest(
     const baseUrl = determineBaseUrl(config);
     if (!baseUrl) throw new Error(`API 地址无效：provider=${config.provider}`);
     if (!config.apiKey) throw new Error(`API Key 为空：provider=${config.provider}`);
+    assertRequestMediaSupported(config, messages);
 
     const nativeToolProtocol = options.tools && options.tools.length > 0 ? nativeToolProtocolForConfig(config) : null;
     const providerKind = providerKindForConfig(config, { nativeToolProtocol });
@@ -345,7 +359,9 @@ function stringifyEnumValues(value: unknown): unknown {
 
 function textFromContent(content: string | LLMContentPart[]): string {
     if (typeof content === "string") return content;
-    return content.map((part) => part.type === "text" ? part.text : "[vision content omitted]").join("\n");
+    return content.map((part) => part.type === "text"
+        ? part.text
+        : part.type === "image_url" ? "[vision content omitted]" : "[audio content omitted]").join("\n");
 }
 
 function debugTextFromUnknownContent(content: unknown): string {
@@ -356,6 +372,7 @@ function debugTextFromUnknownContent(content: unknown): string {
             if (typeof item.text === "string") return item.text;
             if (item.type === "text" && typeof item.text === "string") return item.text;
             if (item.type === "image_url" || item.image_url) return "[图片]";
+            if (item.type === "input_audio" || item.input_audio) return "[音频]";
             if (item.type === "image" || item.inlineData || item.inline_data) return "[图片]";
             if (item.type === "tool_result") return `[tool_result]\n${String(item.content ?? "")}`;
             if (item.type === "tool_use") return `[tool_use name="${String(item.name ?? "")}"] ${JSON.stringify(item.input ?? {})}`;
@@ -450,6 +467,7 @@ function anthropicContentFromParts(content: string | LLMContentPart[]): unknown[
     if (typeof content === "string") return content ? [{ type: "text", text: content }] : [];
     return content.flatMap<unknown>((part) => {
         if (part.type === "text") return part.text ? [{ type: "text", text: part.text }] : [];
+        if (part.type === "input_audio") return [{ type: "text", text: "[audio omitted: Anthropic API 不支持通用音频输入]" }];
         const parsed = parseDataUrl(part.image_url.url);
         if (!parsed) return [{ type: "text", text: "[image omitted: unsupported image URL]" }];
         return [{
@@ -467,6 +485,9 @@ function geminiContentFromParts(content: string | LLMContentPart[]): unknown[] {
     if (typeof content === "string") return content ? [{ text: content }] : [];
     return content.flatMap<unknown>((part) => {
         if (part.type === "text") return part.text ? [{ text: part.text }] : [];
+        if (part.type === "input_audio") {
+            return [{ inlineData: { mimeType: `audio/${part.input_audio.format}`, data: part.input_audio.data } }];
+        }
         const parsed = parseDataUrl(part.image_url.url);
         if (!parsed) return [{ text: "[image omitted: unsupported image URL]" }];
         return [{

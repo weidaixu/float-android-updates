@@ -950,7 +950,8 @@ function clonePromptContent(content: LLMMessage["content"]): LLMMessage["content
   if (typeof content === "string") return content;
   return content.map(part => {
     if (part.type === "text") return { type: "text", text: part.text };
-    return { type: "image_url", image_url: { ...part.image_url } };
+    if (part.type === "image_url") return { type: "image_url", image_url: { ...part.image_url } };
+    return { type: "input_audio", input_audio: { ...part.input_audio } };
   });
 }
 

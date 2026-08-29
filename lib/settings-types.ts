@@ -137,6 +137,11 @@ export type ApiConfig = {
     enableImageRecognition: boolean;
     enableImageGeneration: boolean;
     preventEmptyGenerateRambling?: boolean;
+    capabilities?: {
+        image?: boolean;
+        audioInput?: boolean;
+        documentNative?: boolean;
+    };
 };
 
 // --- VoiceApiConfig (migrated from voice-settings.tsx) ---
