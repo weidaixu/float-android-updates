@@ -18,6 +18,8 @@
     "build:glass-icons": "node scripts/build-glass-icons.mjs"
   },
   "dependencies": {
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/local-notifications": "^7.0.0",
     "@gltf-transform/functions": "^4.4.1",
     "@heroicons/react": "^2.2.0",
     "@mdi/js": "^7.4.47",

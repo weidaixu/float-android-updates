@@ -1,7 +1,50 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
 export type DownloadFileOptions = {
     disableNativeShare?: boolean;
     nativeShareOnly?: boolean;
 };
+
+type NativeFileSaverPlugin = {
+    startSave(options: { filename: string; mimeType: string }): Promise<{ sessionId: string }>;
+    writeChunk(options: { sessionId: string; data: string }): Promise<void>;
+    finishSave(options: { sessionId: string }): Promise<{ uri: string }>;
+    abortSave(options: { sessionId: string }): Promise<void>;
+};
+
+const NativeFileSaver = registerPlugin<NativeFileSaverPlugin>("NativeFileSaver");
+const NATIVE_SAVE_CHUNK_BYTES = 256 * 1024;
+
+function blobChunkToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error("读取文件分块失败"));
+        reader.onload = () => {
+            const value = typeof reader.result === "string" ? reader.result : "";
+            const comma = value.indexOf(",");
+            if (comma < 0) reject(new Error("文件分块编码失败"));
+            else resolve(value.slice(comma + 1));
+        };
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function saveWithAndroidDocumentPicker(blob: Blob, filename: string): Promise<void> {
+    const { sessionId } = await NativeFileSaver.startSave({
+        filename,
+        mimeType: blob.type || "application/octet-stream",
+    });
+    try {
+        for (let offset = 0; offset < blob.size; offset += NATIVE_SAVE_CHUNK_BYTES) {
+            const data = await blobChunkToBase64(blob.slice(offset, offset + NATIVE_SAVE_CHUNK_BYTES));
+            await NativeFileSaver.writeChunk({ sessionId, data });
+        }
+        await NativeFileSaver.finishSave({ sessionId });
+    } catch (error) {
+        await NativeFileSaver.abortSave({ sessionId }).catch(() => undefined);
+        throw error;
+    }
+}
 
 export function isAndroidBrowser(): boolean {
     return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
@@ -15,6 +58,10 @@ export function isIOSBrowser(): boolean {
 }
 
 export async function downloadFile(blob: Blob, filename: string, options: DownloadFileOptions = {}): Promise<void> {
+    if (Capacitor.getPlatform() === "android" && Capacitor.isNativePlatform()) {
+        await saveWithAndroidDocumentPicker(blob, filename);
+        return;
+    }
     const url = URL.createObjectURL(blob);
     const anchorDownload = () => {
         const a = document.createElement("a");

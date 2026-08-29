@@ -25,6 +25,8 @@ import { loadCharacters } from "@/lib/character-storage";
 import { triggerImmediatePost } from "@/lib/moments-engine";
 import type { Character } from "@/lib/character-types";
 import { requestNotificationPermission } from "@/lib/browser-notification";
+import { Capacitor } from "@capacitor/core";
+import { shouldEnableNotificationSetting, type BrowserNotificationPermission } from "@/lib/notification-permission-state";
 import { disableOfflinePush, enableOfflinePush, getOfflinePushState, isShellEnvironment, loadPushQuietHours, savePushQuietHours, sendTestOfflinePush, type OfflinePushState } from "@/lib/push-client";
 import { isPersonalPushCloudActive, setPersonalPushCloudScheduled } from "@/lib/personal-push-cloud";
 import { loadPushCloudScheduled, savePushCloudScheduled } from "@/lib/cloud-deploy-status";
@@ -144,6 +146,11 @@ function isBrowserNotificationGranted(): boolean {
         && Notification.permission === "granted";
 }
 
+function readBrowserNotificationPermission(): BrowserNotificationPermission {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    return Notification.permission;
+}
+
 /* ══════════════════════════════════════════
    Main export
    ══════════════════════════════════════════ */
@@ -174,7 +181,7 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
     useEffect(() => {
         setIdentity(resolveUserIdentity());
         const settings = loadChatAppSettings();
-        const browserGranted = isBrowserNotificationGranted();
+        const browserGranted = Capacitor.isNativePlatform() || isBrowserNotificationGranted();
         setNotifEnabled(settings.browserNotificationsEnabled === true && browserGranted);
         setEnterToSendEnabled(settings.enterToSendEnabled === true);
         setCallVibrationEnabled(settings.callVibrationEnabled !== false);
@@ -226,10 +233,15 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
         try {
             const granted = await requestNotificationPermission();
             const permissionHint = readBrowserNotificationPermissionHint();
-            if (granted && isBrowserNotificationGranted()) {
+            const enabledAfterRequest = shouldEnableNotificationSetting({
+                runtime: Capacitor.isNativePlatform() ? "native" : "web",
+                requestGranted: granted,
+                browserPermission: readBrowserNotificationPermission(),
+            });
+            if (enabledAfterRequest) {
                 setNotifEnabled(true);
                 saveChatAppSettings({ ...loadChatAppSettings(), browserNotificationsEnabled: true });
-                setNotifHint(permissionHint);
+                setNotifHint(Capacitor.isNativePlatform() ? "安卓系统通知：已允许" : permissionHint);
             } else {
                 setNotifEnabled(false);
                 saveChatAppSettings({ ...loadChatAppSettings(), browserNotificationsEnabled: false });

@@ -139,7 +139,8 @@ import { DESKTOP_WIDGETS_CHANGED_EVENT } from "@/lib/mascot-events";
 import { useWeixinBridge } from "@/lib/use-weixin-bridge";
 import { startWeixinCloudRealtimeSync } from "@/lib/weixin-cloud-sync";
 import { WeixinSyncToast } from "@/components/weixin-sync-toast";
-import { sendBrowserNotification } from "@/lib/browser-notification";
+import { AppUpdatePrompt } from "@/components/app-update-prompt";
+import { initializeNativeNotifications, sendBrowserNotification } from "@/lib/browser-notification";
 import type { ChatSharePayload } from "@/lib/chat-share";
 import { completePendingMcpOAuthCallback } from "@/lib/tool-executor";
 import { LayoutGrid, LoaderCircle, RefreshCw } from "lucide-react";
@@ -1040,6 +1041,10 @@ const MusicShellOverlays = memo(function MusicShellOverlays({
 });
 
 export function DesktopShell({ initialThemeProfile, initialThemeAssets }: DesktopShellProps) {
+  useEffect(() => {
+    void initializeNativeNotifications();
+  }, []);
+
   const musicOverlayControllerRef = useRef<MusicOverlayController | null>(null);
   const handleMusicOverlayControllerChange = useCallback((controller: MusicOverlayController | null) => {
     musicOverlayControllerRef.current = controller;
@@ -1114,6 +1119,14 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
   useEffect(() => {
     activeAppRef.current = activeApp;
   }, [activeApp]);
+  // Android system edge-back: close the currently open phone app instead of exiting the APK.
+  useEffect(() => {
+    const onAndroidBack = () => {
+      if (activeAppRef.current) setActiveApp(null);
+    };
+    window.addEventListener("androidBack", onAndroidBack);
+    return () => window.removeEventListener("androidBack", onAndroidBack);
+  }, []);
   // Listen for theme CSS updates from 小卷
   useEffect(() => {
     const onThemeUpdate = () => {
@@ -5034,6 +5047,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
       </section>
       {/* 微信云同步过程可视化：拉取/上传/运行包同步与失败都在这里冒 toast */}
       <WeixinSyncToast />
+      <AppUpdatePrompt />
     </>
   );
 }

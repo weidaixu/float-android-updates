@@ -473,7 +473,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       const useNativeShare = isIOSBrowser();
       await downloadBackupBlob(pendingExport.blob, pendingExport.manifest, useNativeShare ? { nativeShareOnly: true } : { disableNativeShare: true });
       setPendingExport(null);
-      onNotice?.(useNativeShare ? "已打开系统分享，请选择“存储到文件”。" : "已开始下载备份文件。");
+      onNotice?.(useNativeShare ? "已打开系统分享，请选择“存储到文件”。" : isAndroidBrowser() ? "备份文件已保存。" : "已开始下载备份文件。");
     } catch (error) {
       onNotice?.(error instanceof Error ? error.message : "无法打开系统分享，请稍后再试。");
     } finally {

@@ -7,6 +7,7 @@ import { useAccount } from "@/lib/account-context";
 import { isSelfHostedModeEnabled } from "@/lib/self-hosting";
 import { changeAccountPassword } from "@/lib/account-client";
 import { ApiSettings } from "./settings/api-settings";
+import { BackendApiSettings } from "./settings/backend-api-settings";
 import { VoiceSettings } from "./settings/voice-settings";
 import { ImageGenerationSettings } from "./settings/image-generation-settings";
 import { PresetManager } from "./settings/preset-manager";
@@ -291,7 +292,7 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
     const renderSubPage = () => {
         switch (currentPage) {
             case "api":
-                return <ApiSettings />;
+                return <><BackendApiSettings /><ApiSettings /></>;
             case "voice":
                 return <VoiceSettings />;
             case "imageGeneration":
