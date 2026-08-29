@@ -145,8 +145,10 @@ jobs:
           aapt="$ANDROID_HOME/build-tools/34.0.0/aapt"
           "$cert" verify "$apk"
           actual_cert="$("$cert" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          echo "Signing certificate SHA-256: $actual_cert"
           test "$actual_cert" = "$EXPECTED_CERT_SHA256"
-          "$aapt" dump badging "$apk" | grep -q "package: name='com.floatapp.mobile'"
+          "$aapt" dump badging "$apk" > apk-badging.txt
+          grep -q "package: name='com.floatapp.mobile'" apk-badging.txt
           apk_name="${{ steps.version.outputs.apk_name || steps.dry_version.outputs.apk_name }}"
           mkdir -p dist
           cp "$apk" "dist/$apk_name"
