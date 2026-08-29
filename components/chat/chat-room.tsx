@@ -94,6 +94,8 @@ import { createPendingAttachment, processPendingAttachment } from "@/lib/chat-at
 import { buildStoredAttachmentMetadata } from "@/lib/chat-attachments/message-metadata";
 import type { PendingAttachment } from "@/lib/chat-attachments/types";
 import { storeMediaBlob } from "@/lib/media-cache-storage";
+import { extractPublicUrls } from "@/lib/link-analysis/url-detection";
+import { resolvePublicLink } from "@/lib/link-analysis/link-resolver";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -3989,6 +3991,24 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             const diceFace = diceOnly ? rollChatDiceFace() : 0;
 
             const metadata = buildStoredAttachmentMetadata(readyAttachments);
+            const publicUrls = extractPublicUrls(currentText);
+            if (publicUrls.length) showChatToast("正在读取公开链接…");
+            for (const url of publicUrls) {
+                try {
+                    const part = await resolvePublicLink(url);
+                    if (part.type === "text") {
+                        metadata.push({
+                            kind: "document",
+                            name: url,
+                            mimeType: "text/html",
+                            size: part.text.length,
+                            extractedText: part.text,
+                        });
+                    }
+                } catch (error) {
+                    showChatToast(`链接未能提取，将按原地址发送：${error instanceof Error ? error.message : "读取失败"}`, 3500);
+                }
+            }
             for (const attachment of readyAttachments) {
                 if (attachment.kind !== "image") continue;
                 const mediaRef = await storeMediaBlob(attachment.file, attachment.mimeType, "image");
