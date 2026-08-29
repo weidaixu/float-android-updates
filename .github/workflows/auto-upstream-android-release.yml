@@ -30,7 +30,7 @@ jobs:
       RELEASE_REPOSITORY: weidaixu/float-android-updates
       EXPECTED_CERT_SHA256: 14eaa56eca4dc41a4f09be90dcd9ad78e4ea608ac51ed58619222a94a02bd154
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -65,12 +65,12 @@ jobs:
           git merge --no-edit upstream/main
           find .github/workflows -maxdepth 1 -type f ! -name auto-upstream-android-release.yml -delete
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.detect.outputs.run_build == 'true'
         with:
-          node-version: 20
+          node-version: 22
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: steps.detect.outputs.run_build == 'true'
         with:
           distribution: temurin
