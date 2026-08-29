@@ -13,6 +13,7 @@ import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-hooks";
 import { parseAIResponse } from "./rich-message-parser";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
+import type { StoredAttachmentMetadata } from "./chat-attachments/message-metadata";
 
 export const DEFAULT_VISION_IMAGE_PROMPT_LIMIT = 1;
 export const MAX_VISION_IMAGE_PROMPT_LIMIT = 20;
@@ -88,6 +89,7 @@ export type ChatMessage = {
     content: string;
     status: ChatMessageStatus;
     createdAt: string; // ISO date
+    attachments?: StoredAttachmentMetadata[];
     order?: number; // Stable per-session display order
     responseBatchId?: string; // Assistant raw-response batch id
     rawResponseText?: string; // Assistant raw response before parsing/splitting

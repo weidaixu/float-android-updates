@@ -88,6 +88,12 @@ import { extractTextToolDirectiveText } from "@/lib/text-tool-protocol";
 import { emitChatPluginEvent, getChatPluginHookBus, runChatPluginTransform } from "@/lib/chat-plugin-hooks";
 import { CHAT_PLUGIN_TOAST_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
+import { ChatAttachmentPicker } from "./chat-attachment-picker";
+import { ChatAttachmentTray } from "./chat-attachment-tray";
+import { createPendingAttachment, processPendingAttachment } from "@/lib/chat-attachments/process-attachment";
+import { buildStoredAttachmentMetadata } from "@/lib/chat-attachments/message-metadata";
+import type { PendingAttachment } from "@/lib/chat-attachments/types";
+import { storeMediaBlob } from "@/lib/media-cache-storage";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -624,7 +630,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onOpenCustomPlusAction: (action: RegisteredCustomAppChatPlusAction) => void;
     onStartVideoCall: () => void;
     onStartVoiceCall: () => void;
-    onSendText: (text: string, options?: { autoReply?: boolean }) => boolean;
+    onSendText: (text: string, options?: { autoReply?: boolean; attachments?: PendingAttachment[] }) => Promise<boolean>;
     onStopGeneration: () => void;
     onTriggerAIResponse: () => void;
 	onSendSticker: (name: string, url?: string) => void;
@@ -661,6 +667,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onSendSticker,
 }, ref) {
     const [inputText, setInputText] = useState("");
+    const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     // 表情包搜索联想：ESC/失焦置 true 隐藏，输入变化重新开启
     const [suggestClosed, setSuggestClosed] = useState(false);
@@ -697,16 +704,32 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         },
     }), [appendText]);
 
-    const handleSubmit = () => {
+    const processOne = useCallback(async (pending: PendingAttachment) => {
+        const processed = await processPendingAttachment(pending);
+        setAttachments(current => current.map(item => item.id === processed.id ? processed : item));
+    }, []);
+
+    const handlePickedFiles = useCallback((files: File[]) => {
+        const pending = files.map(createPendingAttachment);
+        setAttachments(current => [...current, ...pending]);
+        for (const item of pending) {
+            if (item.status === "processing") void processOne(item);
+        }
+    }, [processOne]);
+
+    const handleSubmit = async () => {
         if (inputLocked) return;
         if (isGenerating) {
             onStopGeneration();
             return;
         }
         const trimmed = inputText.trim();
-        if (!trimmed) return;
-        if (!onSendText(trimmed)) return;
+        const readyAttachments = attachments.filter(item => item.status === "ready");
+        if (!trimmed && readyAttachments.length === 0) return;
+        if (attachments.some(item => item.status === "processing")) return;
+        if (!(await onSendText(trimmed, { attachments: readyAttachments }))) return;
         setInputText("");
+        setAttachments([]);
         resetTextareaHeight();
         onClosePanels();
     };
@@ -778,6 +801,17 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     onClose={() => setSuggestClosed(true)}
                 />
             )}
+            <ChatAttachmentTray
+                attachments={attachments}
+                onRemove={(id) => setAttachments(current => current.filter(item => item.id !== id))}
+                onRetry={(id) => {
+                    const item = attachments.find(candidate => candidate.id === id);
+                    if (!item) return;
+                    const retrying = { ...item, status: "processing" as const, error: undefined };
+                    setAttachments(current => current.map(candidate => candidate.id === id ? retrying : candidate));
+                    void processOne(retrying);
+                }}
+            />
             <textarea
                 ref={textareaRef}
                 rows={1}
@@ -834,12 +868,13 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 <button onClick={onToggleStickerPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><polyline points="14 3 14 8 21 8" /><path d="M8 13h0" /><path d="M16 13h0" /><path d="M10 17c.5.3 1.2.5 2 .5s1.5-.2 2-.5" /></svg>
                 </button>
+                <ChatAttachmentPicker disabled={inputLocked || isGenerating} onPick={handlePickedFiles} />
                 <button onClick={onTogglePlusMenu} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                 </button>
                 <button
                     onClick={handleSubmit}
-                    disabled={!isGenerating && (inputLocked || !inputText.trim())}
+                    disabled={!isGenerating && (inputLocked || attachments.some(item => item.status === "processing") || (!inputText.trim() && !attachments.some(item => item.status === "ready")))}
                     style={inputLocked && !isGenerating ? { opacity: 0.35 } : undefined}
                     className="ui-bare-btn text-[var(--c-text)]"
                     aria-label={isGenerating ? "停止本轮生成" : "发送"}
@@ -3925,14 +3960,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return true;
     };
 
-    const handleSendText = (text: string, options?: { autoReply?: boolean }): boolean => {
+    const handleSendText = async (text: string, options?: { autoReply?: boolean; attachments?: PendingAttachment[] }): Promise<boolean> => {
         if (!ensureGroupSpeakPermission()) return false;
         if (isGenerating) {
             showChatToast("请先等待对方回复");
             return false;
         }
         const trimmed = text.trim();
-        if (!trimmed) return false;
+        const readyAttachments = options?.attachments || [];
+        if (!trimmed && readyAttachments.length === 0) return false;
 
         // Cancel any pending follow-up for this session
         cancelFollowUp(session.id);
@@ -3946,18 +3982,34 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         } : undefined;
         setQuotingMessage(null);
 
-        const commitSendText = (currentText: string) => {
+        const commitSendText = async (currentText: string) => {
             // 掷骰子：整条消息就是骰子图标时，发骰子气泡（内容仅图标），
             // 点数由系统旁白公布——避免结果挂在 user 消息上被角色模仿格式
             const diceOnly = !isQuoting && isDiceOnlyMessage(currentText);
             const diceFace = diceOnly ? rollChatDiceFace() : 0;
 
+            const metadata = buildStoredAttachmentMetadata(readyAttachments);
+            for (const attachment of readyAttachments) {
+                if (attachment.kind !== "image") continue;
+                const mediaRef = await storeMediaBlob(attachment.file, attachment.mimeType, "image");
+                const mediaMessage = pushChatMessage({
+                    sessionId: session.id,
+                    role: "user",
+                    content: attachment.name,
+                    mediaType: "media_file",
+                    mediaUrl: mediaRef,
+                    mediaData: { fileType: "image", fileName: attachment.name, label: attachment.name },
+                });
+                setMessages(prev => [...prev, mediaMessage]);
+            }
+            const visibleText = currentText || `发送了文件：${readyAttachments.map(item => item.name).join("、")}`;
             const newMsg = pushChatMessage({
                 sessionId: session.id,
                 role: "user",
-                content: currentText,
+                content: visibleText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
                 mediaData: diceOnly ? { diceFace } : isQuoting ? quoteData : undefined,
+                ...(metadata.length ? { attachments: metadata } : {}),
             });
 
             setMessages(prev => [...prev, newMsg]);
@@ -3978,18 +4030,17 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         // 聊天插件织入点 user.beforeSend：无插件时走原同步路径，
         // 有插件时输入框先清空，改写/取消在异步续体里完成
         if (getChatPluginHookBus().hasHandlers("user.beforeSend")) {
-            void runChatPluginTransform("user.beforeSend", {
+            const payload = await runChatPluginTransform("user.beforeSend", {
                 text: trimmed,
                 sessionId: session.id,
                 isGroup: !!session.isGroup,
                 cancelled: false,
-            }).then(payload => {
-                if (payload.cancelled) return;
-                const finalText = typeof payload.text === "string" ? payload.text.trim() : trimmed;
-                if (finalText) commitSendText(finalText);
             });
+            if (payload.cancelled) return false;
+            const finalText = typeof payload.text === "string" ? payload.text.trim() : trimmed;
+            if (finalText || readyAttachments.length) await commitSendText(finalText);
         } else {
-            commitSendText(trimmed);
+            await commitSendText(trimmed);
         }
         return true;
     };

@@ -17,6 +17,7 @@ import { formatCharacterRelationsForPrompt } from "./character-world-storage";
 import { buildCharacterTimeContext, buildGroupTimeContext, type CharacterTimeContext } from "./character-time";
 import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request";
 import { buildGroupAdminBracketText } from "./group-admin";
+import { attachmentPromptText } from "./chat-attachments/message-metadata.ts";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -535,6 +536,8 @@ function pushChronologicalShortTermBlocks(params: {
         prevWasHistory = true;
 
         let body = stripStateAndInnerForPrompt(msg.content);
+        const attachmentText = attachmentPromptText(msg.attachments);
+        if (attachmentText) body = `${body}\n\n${attachmentText}`.trim();
         let imageUrl: string | undefined;
 
         if (msg.mediaType) {
@@ -995,6 +998,8 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
             prevTs = ts;
             prevRole = promptRole;
             let body = stripStateAndInnerForPrompt(msg.content);
+            const attachmentText = attachmentPromptText(msg.attachments);
+            if (attachmentText) body = `${body}\n\n${attachmentText}`.trim();
             let imageUrl: string | undefined;
 
             // Format rich-media messages as bracket markers so the AI sees them in context
