@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeFileSaverPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(VideoAnalysisPlugin.class);
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(

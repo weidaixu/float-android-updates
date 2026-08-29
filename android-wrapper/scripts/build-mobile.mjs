@@ -30,14 +30,20 @@ for (const relative of [
 
 const config = path.join(work, "next.config.mjs");
 fs.appendFileSync(config, "\nnextConfig.output = 'export';\n");
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npmOptions = {
   cwd: work,
   stdio: "inherit",
   env: { ...process.env, NEXT_PUBLIC_SELF_HOSTED_MODE: "1" },
 };
-execFileSync(npmCommand, ["ci", "--ignore-scripts", "--include=dev"], npmOptions);
-execFileSync(npmCommand, ["run", "build"], npmOptions);
+function runNpm(args) {
+  if (process.platform === "win32") {
+    execFileSync(process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe", ["/d", "/s", "/c", "npm", ...args], npmOptions);
+    return;
+  }
+  execFileSync("npm", args, npmOptions);
+}
+runNpm(["ci", "--ignore-scripts", "--include=dev"]);
+runNpm(["run", "build"]);
 
 const out = path.join(work, 'out');
 const www = path.join(wrapperRoot, "www");

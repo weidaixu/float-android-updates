@@ -1,6 +1,7 @@
 import { extractDocument } from "./document-extractor.ts";
 import type { AnalysisPart, PendingAttachment } from "./types.ts";
 import { validateAttachment } from "./validation.ts";
+import { extractVideo } from "./video-extractor.ts";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -51,7 +52,9 @@ export async function processPendingAttachment(attachment: PendingAttachment): P
         sourceName: attachment.name,
       }];
     } else {
-      throw new Error("视频正在等待本机解析组件处理。");
+      const result = await extractVideo(attachment.file);
+      parts = result.parts;
+      await result.cleanup();
     }
     return { ...attachment, status: "ready", parts, error: undefined };
   } catch (error) {
