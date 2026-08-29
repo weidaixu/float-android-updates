@@ -1,0 +1,6 @@
+name = "float-public-link-resolver"
+main = "src/index.ts"
+compatibility_date = "2026-08-29"
+
+[vars]
+MAX_RESPONSE_BYTES = "5242880"

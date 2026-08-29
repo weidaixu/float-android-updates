@@ -8,7 +8,12 @@ const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 export interface LinkResolverOptions {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  workerUrl?: string;
+  workerToken?: string;
 }
+
+export const LINK_RESOLVER_URL_KEY = "float:link-resolver:url";
+export const LINK_RESOLVER_TOKEN_KEY = "float:link-resolver:token";
 
 function htmlToText(html: string): { title: string; text: string } {
   if (typeof DOMParser !== "undefined") {
@@ -28,7 +33,7 @@ function htmlToText(html: string): { title: string; text: string } {
   return { title, text };
 }
 
-export async function resolvePublicLink(input: string, options: LinkResolverOptions = {}): Promise<AnalysisPart> {
+async function resolvePublicLinkDirect(input: string, options: LinkResolverOptions = {}): Promise<AnalysisPart> {
   const fetchImpl = options.fetchImpl || fetch;
   let current = input;
   const controller = new AbortController();
@@ -71,5 +76,31 @@ export async function resolvePublicLink(input: string, options: LinkResolverOpti
     throw new Error("链接重定向次数过多");
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function resolveViaWorker(input: string, workerUrl: string, token: string, fetchImpl: typeof fetch): Promise<AnalysisPart> {
+  const response = await fetchImpl(workerUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ url: input }),
+  });
+  const data = await response.json() as { ok?: boolean; canonicalUrl?: string; platform?: string; title?: string; text?: string; errorCode?: string };
+  if (!response.ok || !data.ok || !data.text) throw new Error(data.errorCode || `Worker HTTP ${response.status}`);
+  return {
+    type: "text",
+    sourceName: data.canonicalUrl || input,
+    text: `[公开链接：${data.platform || "web"}]\n${data.title ? `标题：${data.title}\n` : ""}地址：${data.canonicalUrl || input}\n\n${normalizeExtractedText(data.text)}`,
+  };
+}
+
+export async function resolvePublicLink(input: string, options: LinkResolverOptions = {}): Promise<AnalysisPart> {
+  try {
+    return await resolvePublicLinkDirect(input, options);
+  } catch (directError) {
+    const workerUrl = options.workerUrl ?? (typeof window !== "undefined" ? window.localStorage.getItem(LINK_RESOLVER_URL_KEY) || "" : "");
+    const workerToken = options.workerToken ?? (typeof window !== "undefined" ? window.localStorage.getItem(LINK_RESOLVER_TOKEN_KEY) || "" : "");
+    if (!workerUrl || !workerToken) throw directError;
+    return resolveViaWorker(input, workerUrl, workerToken, options.fetchImpl || fetch);
   }
 }

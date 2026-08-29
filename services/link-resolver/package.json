@@ -1,0 +1,7 @@
+{
+  "name": "float-link-resolver",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.ts" },
+  "devDependencies": { "wrangler": "^4.32.0" }
+}
