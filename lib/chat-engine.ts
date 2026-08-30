@@ -80,6 +80,7 @@ export { getApiLogs, clearApiLogs, type DebugInfo } from "./api-log-store";
 import { stripStateAndInnerForPrompt } from "./prompt-sanitizer";
 import { getInternalCapability, getInternalCapabilitySubToolDefinitions } from "./internal-capability-storage";
 import { isMediaStoreRef, loadMediaBlob } from "./media-cache-storage";
+import { resolveModelCapabilities } from "./chat-attachments/model-capabilities.ts";
 import {
     DEFAULT_CHAT_BILINGUAL_PROMPT,
     DEFAULT_GROUP_CHAT_BILINGUAL_PROMPT,
@@ -292,6 +293,14 @@ export async function prepareVisionPromptImageMessage(msg: ChatMessage): Promise
         msg.mediaUrl = result.url;
     } else if ("drop" in result) {
         msg.mediaUrl = undefined;
+    }
+}
+
+async function prepareAudioPromptMessage(msg: ChatMessage): Promise<void> {
+    if (msg.mediaType !== "media_file" || msg.mediaData?.fileType !== "audio" || !msg.mediaUrl) return;
+    if (isMediaStoreRef(msg.mediaUrl)) {
+        const stored = await loadMediaBlob(msg.mediaUrl);
+        if (stored) msg.mediaUrl = await blobToDataUrl(stored.blob);
     }
 }
 
@@ -1858,6 +1867,9 @@ export async function buildChatPromptMessages(
         for (const msg of promptHistory) {
             await prepareVisionPromptImageMessage(msg);
         }
+    }
+    if (resolveModelCapabilities(config).audioInput) {
+        for (const msg of promptHistory) await prepareAudioPromptMessage(msg);
     }
 
     const [memResults, coreResults, musicLocal, musicCloud] = await Promise.all([

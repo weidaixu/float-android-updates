@@ -97,6 +97,7 @@ import { storeMediaBlob } from "@/lib/media-cache-storage";
 import { extractPublicUrls } from "@/lib/link-analysis/url-detection";
 import { resolvePublicLink } from "@/lib/link-analysis/link-resolver";
 import { assertPartsSupported, resolveModelCapabilities } from "@/lib/chat-attachments/model-capabilities";
+import { pickNativeVideoAttachment } from "@/lib/chat-attachments/native-video-extractor";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -871,7 +872,19 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 <button onClick={onToggleStickerPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><polyline points="14 3 14 8 21 8" /><path d="M8 13h0" /><path d="M16 13h0" /><path d="M10 17c.5.3 1.2.5 2 .5s1.5-.2 2-.5" /></svg>
                 </button>
-                <ChatAttachmentPicker disabled={inputLocked || isGenerating} onPick={handlePickedFiles} />
+                <ChatAttachmentPicker
+                    disabled={inputLocked || isGenerating}
+                    onPick={handlePickedFiles}
+                    onPickNativeVideo={() => {
+                        void pickNativeVideoAttachment()
+                            .then(item => setAttachments(current => [...current, item]))
+                            .catch(error => setAttachments(current => [...current, {
+                                id: crypto.randomUUID(), kind: "video", name: "视频", mimeType: "video/mp4", size: 0,
+                                status: "error", error: error instanceof Error ? error.message : "视频分析失败",
+                                file: new File([], "video.mp4", { type: "video/mp4" }),
+                            }]));
+                    }}
+                />
                 <button onClick={onTogglePlusMenu} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                 </button>
@@ -4039,6 +4052,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         mediaType: "media_file",
                         mediaUrl: mediaRef,
                         mediaData: { fileType: "image", fileName: image.name, label: image.name },
+                    });
+                    setMessages(prev => [...prev, mediaMessage]);
+                }
+                const audioParts = (attachment.parts || []).filter(part => part.type === "audio");
+                for (const audio of audioParts) {
+                    const audioBlob = await (await fetch(audio.dataUrl)).blob();
+                    const mediaRef = await storeMediaBlob(audioBlob, audio.mimeType || audioBlob.type || "audio/m4a", "audio");
+                    const audioName = audio.sourceName || `${attachment.name}-audio.m4a`;
+                    const mediaMessage = pushChatMessage({
+                        sessionId: session.id,
+                        role: "user",
+                        content: audioName,
+                        mediaType: "media_file",
+                        mediaUrl: mediaRef,
+                        mediaData: { fileType: "audio", fileName: audioName, label: audioName },
                     });
                     setMessages(prev => [...prev, mediaMessage]);
                 }

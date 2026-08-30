@@ -146,6 +146,7 @@ type PromptBlock = {
     marker: string;
     fromHistory?: boolean;
     imageUrl?: string;      // vision: image URL/data URL attached to this prompt block
+    audioInput?: { data: string; format: string };
     reasoning?: string;
     openRouterReasoningDetails?: unknown[];
     toolCalls?: LLMToolCallPayload[];
@@ -189,6 +190,12 @@ function getPromptVisionImageUrl(msg: ChatMessage): string | undefined {
         return stickerUrl || undefined;
     }
     return undefined;
+}
+
+function getPromptAudioInput(msg: ChatMessage): { data: string; format: string } | undefined {
+    if (msg.mediaType !== "media_file" || msg.mediaData?.fileType !== "audio" || !msg.mediaUrl) return undefined;
+    const match = msg.mediaUrl.match(/^data:audio\/([^;,]+);base64,(.+)$/);
+    return match ? { format: match[1].replace("x-", ""), data: match[2] } : undefined;
 }
 
 function formatDirectVisionBody(msg: ChatMessage, userName: string, charName: string): string {
@@ -539,6 +546,7 @@ function pushChronologicalShortTermBlocks(params: {
         const attachmentText = attachmentPromptText(msg.attachments);
         if (attachmentText) body = `${body}\n\n${attachmentText}`.trim();
         let imageUrl: string | undefined;
+        const audioInput = getPromptAudioInput(msg);
 
         if (msg.mediaType) {
             const visionImageUrl = visionEnabled ? getPromptVisionImageUrl(msg) : undefined;
@@ -550,7 +558,7 @@ function pushChronologicalShortTermBlocks(params: {
             }
         }
 
-        if (!body.trim() && !imageUrl) return;
+        if (!body.trim() && !imageUrl && !audioInput) return;
 
         const isAssistantImage = imageUrl && msg.role === "assistant" && msg.mediaType === "media_file";
         const text = isAssistantImage
@@ -564,6 +572,7 @@ function pushChronologicalShortTermBlocks(params: {
             marker: `History [${item.historyIndex}]`,
             fromHistory: true,
             imageUrl,
+            audioInput,
         });
 
         if (msg.isRetracted) {
@@ -1001,6 +1010,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
             const attachmentText = attachmentPromptText(msg.attachments);
             if (attachmentText) body = `${body}\n\n${attachmentText}`.trim();
             let imageUrl: string | undefined;
+            const audioInput = getPromptAudioInput(msg);
 
             // Format rich-media messages as bracket markers so the AI sees them in context
             if (msg.mediaType) {
@@ -1013,7 +1023,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 }
             }
 
-            if (!body.trim() && !imageUrl) return;
+            if (!body.trim() && !imageUrl && !audioInput) return;
             const isAssistantImage = imageUrl && msg.role === "assistant" && msg.mediaType === "media_file";
             const text = isAssistantImage
                 ? formatAssistantImageHistoryText(msg, body, Boolean(showTs), ts)
@@ -1026,6 +1036,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 marker: `History [${distFromBottom}]`,
                 fromHistory: true,
                 imageUrl,
+                audioInput,
             });
 
             // Retracted: keep the original message above, then append a system notice
@@ -1073,11 +1084,12 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                !finalPayload[finalPayload.length - 1].toolCalls?.length &&
                finalPayload[finalPayload.length - 1].role !== "tool");
 
-        if (b.imageUrl) {
-            // Vision message: build multi-part content with image (never merged)
+        if (b.imageUrl || b.audioInput) {
+            // Multimodal message: build content parts without merging media into text.
             const parts: LLMContentPart[] = [];
             if (processedText) parts.push({ type: "text", text: processedText });
-            parts.push({ type: "image_url", image_url: { url: b.imageUrl, detail: "low" } });
+            if (b.imageUrl) parts.push({ type: "image_url", image_url: { url: b.imageUrl, detail: "low" } });
+            if (b.audioInput) parts.push({ type: "input_audio", input_audio: b.audioInput });
             finalPayload.push({
                 role: b.role,
                 content: parts,
@@ -1709,6 +1721,7 @@ function pushGroupChronologicalShortTermBlocks(params: {
 
         let body = msg.content;
         let imageUrl: string | undefined;
+        const audioInput = getPromptAudioInput(msg);
 
         const visionImageUrl = visionEnabled ? getPromptVisionImageUrl(msg) : undefined;
         if (visionImageUrl) {
@@ -1728,6 +1741,7 @@ function pushGroupChronologicalShortTermBlocks(params: {
             marker: `History [${item.historyIndex}]`,
             fromHistory: true,
             imageUrl,
+            audioInput,
         });
     });
 
@@ -2189,6 +2203,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
             prevRole = promptRole;
             let body = msg.content; // Already annotated with [SenderName]: prefix
             let imageUrl: string | undefined;
+            const audioInput = getPromptAudioInput(msg);
 
             const visionImageUrl = groupVisionEnabled ? getPromptVisionImageUrl(msg) : undefined;
             if (visionImageUrl) {
@@ -2209,6 +2224,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
                 marker: `History [${distFromBottom}]`,
                 fromHistory: true,
                 imageUrl,
+                audioInput,
             });
         });
     }
@@ -2235,11 +2251,12 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
             !finalPayload[finalPayload.length - 1].toolCalls?.length &&
             finalPayload[finalPayload.length - 1].role !== "tool";
 
-        if (b.imageUrl) {
-            // Vision message: build multi-part content with image (never merged)
+        if (b.imageUrl || b.audioInput) {
+            // Multimodal message: build content parts without merging media into text.
             const parts: LLMContentPart[] = [];
             if (processedText) parts.push({ type: "text", text: processedText });
-            parts.push({ type: "image_url", image_url: { url: b.imageUrl, detail: "low" } });
+            if (b.imageUrl) parts.push({ type: "image_url", image_url: { url: b.imageUrl, detail: "low" } });
+            if (b.audioInput) parts.push({ type: "input_audio", input_audio: b.audioInput });
             finalPayload.push({
                 role: b.role,
                 content: parts,

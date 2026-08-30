@@ -7,15 +7,20 @@ import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaMuxer;
 import android.net.Uri;
+import android.app.Activity;
+import android.content.Intent;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -60,6 +65,31 @@ public class VideoAnalysisPlugin extends Plugin {
         String value = call.getString("uri");
         if (value == null || value.trim().isEmpty()) throw new IllegalArgumentException("缺少视频 URI");
         return Uri.parse(value);
+    }
+
+    @PluginMethod
+    public void pickVideo(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("video/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(call, intent, "videoPicked");
+    }
+
+    @ActivityCallback
+    private void videoPicked(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            call.reject("已取消选择视频");
+            return;
+        }
+        Uri uri = result.getData().getData();
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Exception ignored) {}
+        JSObject output = new JSObject();
+        output.put("uri", uri.toString());
+        call.resolve(output);
     }
 
     @PluginMethod
@@ -162,6 +192,62 @@ public class VideoAnalysisPlugin extends Plugin {
             } finally {
                 extractor.release();
                 if (muxer != null) try { muxer.stop(); muxer.release(); } catch (Exception ignored) {}
+            }
+        });
+    }
+
+    @PluginMethod
+    public void extractSubtitles(PluginCall call) {
+        final Uri uri;
+        try { uri = requireUri(call); } catch (Exception error) { call.reject(error.getMessage()); return; }
+        getBridge().execute(() -> {
+            MediaExtractor extractor = new MediaExtractor();
+            try {
+                extractor.setDataSource(getContext(), uri, null);
+                int subtitleTrack = -1;
+                for (int i = 0; i < extractor.getTrackCount(); i++) {
+                    String mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME);
+                    if (mime != null && (mime.startsWith("text/") || mime.contains("subrip") || mime.contains("ttml")
+                            || mime.contains("vtt") || mime.contains("tx3g"))) {
+                        subtitleTrack = i;
+                        break;
+                    }
+                }
+                JSObject result = new JSObject();
+                if (subtitleTrack < 0) {
+                    result.put("text", "");
+                    call.resolve(result);
+                    return;
+                }
+                extractor.selectTrack(subtitleTrack);
+                ByteBuffer buffer = ByteBuffer.allocate(256 * 1024);
+                StringBuilder text = new StringBuilder();
+                while (text.length() < 120000) {
+                    buffer.clear();
+                    int size = extractor.readSampleData(buffer, 0);
+                    if (size < 0) break;
+                    byte[] sample = new byte[size];
+                    buffer.position(0);
+                    buffer.get(sample);
+                    int offset = 0;
+                    if (size > 2) {
+                        int declared = ((sample[0] & 0xff) << 8) | (sample[1] & 0xff);
+                        if (declared > 0 && declared <= size - 2) offset = 2;
+                    }
+                    String cue = new String(sample, offset, size - offset, StandardCharsets.UTF_8)
+                            .replaceAll("[\\p{Cc}&&[^\\n\\t]]", " ").trim();
+                    if (!cue.isEmpty()) {
+                        long seconds = Math.max(0L, extractor.getSampleTime() / 1_000_000L);
+                        text.append(String.format(Locale.ROOT, "[%02d:%02d] %s\\n", seconds / 60L, seconds % 60L, cue));
+                    }
+                    extractor.advance();
+                }
+                result.put("text", text.toString().trim());
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("字幕提取失败", error);
+            } finally {
+                extractor.release();
             }
         });
     }
