@@ -8,9 +8,12 @@ export interface StoredAttachmentMetadata {
   size: number;
   extractedText?: string;
   mediaRef?: string;
+  previewMediaRef?: string;
+  audioMediaRef?: string;
 }
 
-type MetadataSource = Pick<PendingAttachment, "kind" | "name" | "mimeType" | "size" | "parts">;
+type MetadataSource = Pick<PendingAttachment, "kind" | "name" | "mimeType" | "size" | "parts"> &
+  Partial<Pick<StoredAttachmentMetadata, "mediaRef" | "previewMediaRef" | "audioMediaRef">>;
 
 export function buildStoredAttachmentMetadata(
   attachments: MetadataSource[],
@@ -26,6 +29,9 @@ export function buildStoredAttachmentMetadata(
       mimeType: attachment.mimeType,
       size: attachment.size,
       ...(text ? { extractedText: normalizeExtractedText(text) } : {}),
+      ...(attachment.mediaRef ? { mediaRef: attachment.mediaRef } : {}),
+      ...(attachment.previewMediaRef ? { previewMediaRef: attachment.previewMediaRef } : {}),
+      ...(attachment.audioMediaRef ? { audioMediaRef: attachment.audioMediaRef } : {}),
     };
   });
 }

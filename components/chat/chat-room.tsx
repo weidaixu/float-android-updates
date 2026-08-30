@@ -4037,7 +4037,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     showChatToast(`链接未能提取，将按原地址发送：${error instanceof Error ? error.message : "读取失败"}`, 3500);
                 }
             }
-            for (const attachment of readyAttachments) {
+            for (const [attachmentIndex, attachment] of readyAttachments.entries()) {
+                const attachmentMetadata = metadata[attachmentIndex];
+                if (attachment.file.size > 0 && attachment.kind !== "image") {
+                    attachmentMetadata.mediaRef = await storeMediaBlob(
+                        attachment.file,
+                        attachment.mimeType || attachment.file.type || "application/octet-stream",
+                        attachment.kind === "video" ? "video" : "file",
+                    );
+                }
                 const images = attachment.kind === "image"
                     ? [{ blob: attachment.file as Blob, name: attachment.name }]
                     : await Promise.all((attachment.parts || []).filter(part => part.type === "image").map(async (part) => ({
@@ -4046,6 +4054,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     })));
                 for (const image of images) {
                     const mediaRef = await storeMediaBlob(image.blob, image.blob.type || "image/jpeg", "image");
+                    if (attachment.kind === "video" && !attachmentMetadata.previewMediaRef) attachmentMetadata.previewMediaRef = mediaRef;
+                    if (attachment.kind === "image" && !attachmentMetadata.mediaRef) attachmentMetadata.mediaRef = mediaRef;
                     const mediaMessage = pushChatMessage({
                         sessionId: session.id,
                         role: "user",
@@ -4065,6 +4075,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 for (const audio of audioParts) {
                     const audioBlob = await (await fetch(audio.dataUrl)).blob();
                     const mediaRef = await storeMediaBlob(audioBlob, audio.mimeType || audioBlob.type || "audio/m4a", "audio");
+                    if (!attachmentMetadata.audioMediaRef) attachmentMetadata.audioMediaRef = mediaRef;
                     const audioName = audio.sourceName || `${attachment.name}-audio.m4a`;
                     const mediaMessage = pushChatMessage({
                         sessionId: session.id,

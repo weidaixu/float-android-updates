@@ -7129,3 +7129,13 @@
   background: currentColor;
   animation: chat-stream-cursor-blink 1s steps(2, start) infinite;
 }
+.chat-attachment-history-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.chat-attachment-history-video {
+    display: grid;
+    gap: 8px;
+}

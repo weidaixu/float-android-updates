@@ -3,12 +3,13 @@
 import type { InstalledCustomApp } from "./custom-app-types";
 import type { CustomAppMarketItem, CustomAppPackageKind } from "./custom-app-market-types";
 import { getCustomAppPrimaryTags } from "./custom-app-storage";
+import { resolveRuntimeApiUrl } from "./runtime-api-url";
 
 type MarketListResponse = { ok: boolean; apps?: CustomAppMarketItem[]; app?: CustomAppMarketItem; id?: string; setupRequired?: boolean; error?: string };
 type MarketAssetResponse = { ok: boolean; url?: string; path?: string; kind?: CustomAppPackageKind; size?: number; error?: string };
 export type CustomAppMarketAdminView = "pending" | "approved" | "rejected" | "all";
 async function readJson<T>(response: Response): Promise<T> { const data = await response.json().catch(() => ({})); if (!response.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${response.status}`); return data as T; }
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> { const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 15000); try { const response = await fetch(input, { ...init, credentials: "include", signal: controller.signal }); return await readJson<T>(response); } catch (err) { if (err instanceof DOMException && err.name === "AbortError") throw new Error("请求超时，请检查网络连接。"); throw err; } finally { window.clearTimeout(timeout); } }
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> { const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 15000); try { const resolved = typeof input === "string" ? resolveRuntimeApiUrl(input) : input; const response = await fetch(resolved, { ...init, credentials: "include", signal: controller.signal }); return await readJson<T>(response); } catch (err) { if (err instanceof DOMException && err.name === "AbortError") throw new Error("请求超时，请检查网络连接。"); throw err; } finally { window.clearTimeout(timeout); } }
 export async function fetchCustomAppMarketItems(): Promise<CustomAppMarketItem[]> { const data = await fetchJson<MarketListResponse>("/api/app-market/apps-lite"); return data.apps ?? []; }
 export async function fetchCustomAppMarketItemByAppId(appId: string): Promise<CustomAppMarketItem | null> { const data = await fetchJson<MarketListResponse>(`/api/app-market/apps?appId=${encodeURIComponent(appId)}`, { cache: "no-store" }); return data.app ?? null; }
 export async function fetchMyCustomAppMarketItems(): Promise<CustomAppMarketItem[]> { const data = await fetchJson<MarketListResponse>("/api/app-market/apps-lite?mine=1", { cache: "no-store" }); return data.apps ?? []; }

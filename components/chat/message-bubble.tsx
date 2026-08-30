@@ -127,6 +127,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
             return (
                 <>
                     {textBubble}
+                    <AttachmentHistoryCards msg={msg} />
                     <ChatPluginSlot name="message.footer" slotProps={{ sessionId: msg.sessionId, message: msg }} className="chat-plugin-message-footer" />
                 </>
             );
@@ -151,6 +152,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
         if (prev.msg.mediaData?.imageGenerationStatus !== next.msg.mediaData?.imageGenerationStatus) return false;
         if (prev.msg.mediaData?.imageGenerationError !== next.msg.mediaData?.imageGenerationError) return false;
         if (prev.msg.mediaUrl !== next.msg.mediaUrl) return false;
+        if (prev.msg.attachments !== next.msg.attachments) return false;
     }
     if (prev.charName !== next.charName) return false;
     if (prev.userName !== next.userName) return false;
@@ -1850,6 +1852,29 @@ function MediaSaveButton({ url, filename }: { url: string; filename: string }) {
         >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
         </button>
+    );
+}
+
+function AttachmentHistoryCards({ msg }: { msg: ChatMessage }) {
+    const attachments = msg.attachments || [];
+    if (!attachments.length) return null;
+    return (
+        <div className="chat-attachment-history-list">
+            {attachments.map((attachment, index) => {
+                const base = { ...msg, id: `${msg.id}:attachment:${index}`, attachments: undefined };
+                if (attachment.kind === "image") return null;
+                if (attachment.kind === "video") {
+                    return (
+                        <div className="chat-attachment-history-video" key={`${attachment.name}:${index}`}>
+                            {attachment.previewMediaRef && <MediaFileBubble msg={{ ...base, content: attachment.name, mediaType: "media_file", mediaUrl: attachment.previewMediaRef, mediaData: { fileType: "image", fileName: "视频封面" } }} />}
+                            {attachment.audioMediaRef && <MediaFileBubble msg={{ ...base, content: attachment.name, mediaType: "media_file", mediaUrl: attachment.audioMediaRef, mediaData: { fileType: "audio", fileName: `${attachment.name}-音频` } }} />}
+                            <MediaFileBubble msg={{ ...base, content: attachment.name, mediaType: "media_file", mediaUrl: attachment.mediaRef, mediaData: { fileType: "file", fileName: attachment.name } }} />
+                        </div>
+                    );
+                }
+                return <MediaFileBubble key={`${attachment.name}:${index}`} msg={{ ...base, content: attachment.name, mediaType: "media_file", mediaUrl: attachment.mediaRef, mediaData: { fileType: "file", fileName: attachment.name } }} />;
+            })}
+        </div>
     );
 }
 

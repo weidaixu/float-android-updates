@@ -49,3 +49,25 @@ test("stores bounded attachment metadata without File, Blob, or data URL payload
   ]);
   assert.doesNotMatch(JSON.stringify(metadata), /SECRET|secretBinary|data:image/);
 });
+
+test("keeps durable display references for a visible file card", () => {
+  const metadata = buildStoredAttachmentMetadata([{
+    kind: "video",
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    size: 4096,
+    parts: [],
+    mediaRef: "media-store://original",
+    previewMediaRef: "media-store://cover",
+    audioMediaRef: "media-store://audio",
+  }]);
+  assert.deepEqual(metadata, [{
+    kind: "video",
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    size: 4096,
+    mediaRef: "media-store://original",
+    previewMediaRef: "media-store://cover",
+    audioMediaRef: "media-store://audio",
+  }]);
+});

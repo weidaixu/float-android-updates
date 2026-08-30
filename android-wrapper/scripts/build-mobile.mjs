@@ -33,7 +33,11 @@ fs.appendFileSync(config, "\nnextConfig.output = 'export';\n");
 const npmOptions = {
   cwd: work,
   stdio: "inherit",
-  env: { ...process.env, NEXT_PUBLIC_SELF_HOSTED_MODE: "1" },
+  env: {
+    ...process.env,
+    NEXT_PUBLIC_SELF_HOSTED_MODE: "1",
+    NEXT_PUBLIC_FLOAT_WEB_BASE_URL: process.env.NEXT_PUBLIC_FLOAT_WEB_BASE_URL || "https://6a9034bac432403b2e57b58d--glowing-zabaione-a6d318.netlify.app",
+  },
 };
 function runNpm(args) {
   if (process.platform === "win32") {
