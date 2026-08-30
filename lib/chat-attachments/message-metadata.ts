@@ -37,3 +37,15 @@ export function attachmentPromptText(metadata: StoredAttachmentMetadata[] | unde
     .map((item) => `[附件：${item.name}]\n${item.extractedText}`)
     .join("\n\n");
 }
+
+export function appendAttachmentPromptText(body: string, metadata: StoredAttachmentMetadata[] | undefined): string {
+  const attachmentText = attachmentPromptText(metadata);
+  return attachmentText ? `${body}\n\n${attachmentText}`.trim() : body;
+}
+
+export function isAnalysisOnlyMedia(message: {
+  mediaType?: string;
+  mediaData?: { analysisHidden?: boolean };
+}): boolean {
+  return message.mediaType === "media_file" && message.mediaData?.analysisHidden === true;
+}

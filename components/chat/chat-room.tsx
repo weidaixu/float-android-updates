@@ -91,7 +91,7 @@ import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { ChatAttachmentPicker } from "./chat-attachment-picker";
 import { ChatAttachmentTray } from "./chat-attachment-tray";
 import { createPendingAttachment, processPendingAttachment } from "@/lib/chat-attachments/process-attachment";
-import { buildStoredAttachmentMetadata } from "@/lib/chat-attachments/message-metadata";
+import { buildStoredAttachmentMetadata, isAnalysisOnlyMedia } from "@/lib/chat-attachments/message-metadata";
 import type { PendingAttachment } from "@/lib/chat-attachments/types";
 import { storeMediaBlob } from "@/lib/media-cache-storage";
 import { extractPublicUrls } from "@/lib/link-analysis/url-detection";
@@ -283,6 +283,7 @@ function reasoningPreviewLine(text: string): string {
 }
 
 function isHiddenChatFlowMessage(msg: ChatMessage, displayContent?: string): boolean {
+    if (isAnalysisOnlyMedia(msg)) return true;
     if (msg.mediaType === "tool_result" || msg.mediaType === "tool_call") return true;
     return !isChatVisualMedia(msg)
         && !getChatFlowVisibleContent(msg, displayContent)
@@ -4051,7 +4052,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         content: image.name,
                         mediaType: "media_file",
                         mediaUrl: mediaRef,
-                        mediaData: { fileType: "image", fileName: image.name, label: image.name },
+                        mediaData: {
+                            fileType: "image",
+                            fileName: image.name,
+                            label: image.name,
+                            ...(attachment.kind === "video" ? { analysisHidden: true } : {}),
+                        },
                     });
                     setMessages(prev => [...prev, mediaMessage]);
                 }
@@ -4066,7 +4072,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         content: audioName,
                         mediaType: "media_file",
                         mediaUrl: mediaRef,
-                        mediaData: { fileType: "audio", fileName: audioName, label: audioName },
+                        mediaData: { fileType: "audio", fileName: audioName, label: audioName, analysisHidden: true },
                     });
                     setMessages(prev => [...prev, mediaMessage]);
                 }

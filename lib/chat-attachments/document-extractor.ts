@@ -83,6 +83,12 @@ async function extractTxt(buffer: ArrayBuffer): Promise<string> {
 
 async function extractPdf(buffer: ArrayBuffer): Promise<string> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  if (typeof window !== "undefined" && !pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+      import.meta.url,
+    ).toString();
+  }
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(buffer),
     useWorkerFetch: false,
@@ -106,14 +112,16 @@ async function extractPdf(buffer: ArrayBuffer): Promise<string> {
   return pages.join("\n\n");
 }
 
+export function createMammothInput(buffer: ArrayBuffer, isBrowser = typeof window !== "undefined"):
+  { arrayBuffer: ArrayBuffer } | { buffer: Buffer } {
+  if (isBrowser || typeof Buffer === "undefined") return { arrayBuffer: buffer };
+  return { buffer: Buffer.from(buffer) };
+}
+
 async function extractDocx(buffer: ArrayBuffer): Promise<string> {
   const imported = await import("mammoth");
   const mammoth = imported.default ?? imported;
-  const options =
-    typeof Buffer !== "undefined"
-      ? { buffer: Buffer.from(buffer) }
-      : { arrayBuffer: buffer };
-  const result = await mammoth.extractRawText(options);
+  const result = await mammoth.extractRawText(createMammothInput(buffer));
   return result.value;
 }
 

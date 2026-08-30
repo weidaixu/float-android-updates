@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import JSZip from "jszip";
 
-import { extractDocument } from "../lib/chat-attachments/document-extractor.ts";
+import { createMammothInput, extractDocument } from "../lib/chat-attachments/document-extractor.ts";
 import { normalizeExtractedText } from "../lib/chat-attachments/text-normalizer.ts";
 
 function localFile(name, type, bytes) {
@@ -78,6 +78,13 @@ test("extracts DOCX paragraph and table text locally", async () => {
   assert.match(result.part.text, /文档标题/);
   assert.match(result.part.text, /姓名/);
   assert.match(result.part.text, /小浮/);
+});
+
+test("uses mammoth browser arrayBuffer input even when Buffer is polyfilled", () => {
+  const buffer = new Uint8Array([1, 2, 3]).buffer;
+  const input = createMammothInput(buffer, true);
+  assert.deepEqual(Object.keys(input), ["arrayBuffer"]);
+  assert.equal(input.arrayBuffer, buffer);
 });
 
 test("extracts PDF text with a page label", async () => {

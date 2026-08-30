@@ -203,6 +203,7 @@ export type ChatMessage = {
         fileType?: "audio" | "image" | "video" | "file";
         fileName?: string;
         fileDuration?: number;
+        analysisHidden?: boolean;  // locally extracted video frame/audio used by the prompt, not a chat bubble
         useReferenceImage?: boolean; // AI photo tag: whether to send the character reference image to the generator
         imageGenerationMediaRef?: string;
         imageGenerationPrompt?: string;
