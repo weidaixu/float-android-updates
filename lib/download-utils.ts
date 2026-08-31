@@ -1,12 +1,15 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { resolveDownloadSaveMode } from "./download-save-mode";
 
 export type DownloadFileOptions = {
     disableNativeShare?: boolean;
     nativeShareOnly?: boolean;
+    automaticAndroidSave?: boolean;
 };
 
 type NativeFileSaverPlugin = {
     startSave(options: { filename: string; mimeType: string }): Promise<{ sessionId: string }>;
+    startAutomaticSave(options: { filename: string; mimeType: string }): Promise<{ sessionId: string }>;
     writeChunk(options: { sessionId: string; data: string }): Promise<void>;
     finishSave(options: { sessionId: string }): Promise<{ uri: string }>;
     abortSave(options: { sessionId: string }): Promise<void>;
@@ -29,11 +32,21 @@ function blobChunkToBase64(blob: Blob): Promise<string> {
     });
 }
 
-async function saveWithAndroidDocumentPicker(blob: Blob, filename: string): Promise<void> {
-    const { sessionId } = await NativeFileSaver.startSave({
-        filename,
-        mimeType: blob.type || "application/octet-stream",
-    });
+async function saveWithAndroid(blob: Blob, filename: string, automatic: boolean): Promise<void> {
+    let session: { sessionId: string };
+    try {
+        session = await (automatic ? NativeFileSaver.startAutomaticSave : NativeFileSaver.startSave)({
+            filename,
+            mimeType: blob.type || "application/octet-stream",
+        });
+    } catch (error) {
+        if (!automatic) throw error;
+        session = await NativeFileSaver.startSave({
+            filename,
+            mimeType: blob.type || "application/octet-stream",
+        });
+    }
+    const { sessionId } = session;
     try {
         for (let offset = 0; offset < blob.size; offset += NATIVE_SAVE_CHUNK_BYTES) {
             const data = await blobChunkToBase64(blob.slice(offset, offset + NATIVE_SAVE_CHUNK_BYTES));
@@ -58,8 +71,12 @@ export function isIOSBrowser(): boolean {
 }
 
 export async function downloadFile(blob: Blob, filename: string, options: DownloadFileOptions = {}): Promise<void> {
-    if (Capacitor.getPlatform() === "android" && Capacitor.isNativePlatform()) {
-        await saveWithAndroidDocumentPicker(blob, filename);
+    const saveMode = resolveDownloadSaveMode({
+        androidNative: Capacitor.getPlatform() === "android" && Capacitor.isNativePlatform(),
+        automaticAndroidSave: options.automaticAndroidSave,
+    });
+    if (saveMode !== "browser") {
+        await saveWithAndroid(blob, filename, saveMode === "android-downloads");
         return;
     }
     const url = URL.createObjectURL(blob);

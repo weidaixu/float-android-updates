@@ -387,6 +387,7 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
         setBusyFile(path);
         try {
             await downloadResourceHubFile(source, path);
+            onNotice?.(`已下载到手机 Download/Float：${stripAssetImageMark(path.split("/").pop() || "resource")}`);
             // 下载成功默认送出一朵花（今天送过则静默跳过，失败不影响下载）
             if (activeEntry) void handleSendFlower(activeEntry.path, true);
         } catch (err) {

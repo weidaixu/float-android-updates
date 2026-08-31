@@ -305,7 +305,7 @@ export async function downloadResourceHubFile(source: ResourceHubSource, path: s
     const buffer = await fetchResourceHubBinary(source, path);
     const filename = stripAssetImageMark(path.split("/").pop() || "resource");
     const { downloadFile } = await import("./download-utils");
-    await downloadFile(new Blob([buffer]), filename);
+    await downloadFile(new Blob([buffer]), filename, { automaticAndroidSave: true });
 }
 
 // ── 导入 ──

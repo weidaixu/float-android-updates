@@ -1,8 +1,12 @@
 package com.floatapp.mobile;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
@@ -27,10 +31,12 @@ public class NativeFileSaverPlugin extends Plugin {
     private static final class SaveSession {
         final Uri uri;
         final OutputStream output;
+        final boolean pendingMediaStore;
 
-        SaveSession(Uri uri, OutputStream output) {
+        SaveSession(Uri uri, OutputStream output, boolean pendingMediaStore) {
             this.uri = uri;
             this.output = output;
+            this.pendingMediaStore = pendingMediaStore;
         }
     }
 
@@ -74,12 +80,42 @@ public class NativeFileSaverPlugin extends Plugin {
             OutputStream output = getContext().getContentResolver().openOutputStream(uri, "w");
             if (output == null) throw new IOException("无法打开目标文件");
             String sessionId = UUID.randomUUID().toString();
-            sessions.put(sessionId, new SaveSession(uri, output));
+            sessions.put(sessionId, new SaveSession(uri, output, false));
             JSObject resultData = new JSObject();
             resultData.put("sessionId", sessionId);
             call.resolve(resultData);
         } catch (Exception error) {
             call.reject("无法创建保存文件", error);
+        }
+    }
+
+    @PluginMethod
+    public void startAutomaticSave(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.reject("当前安卓版本需要手动选择保存位置", "AUTOMATIC_SAVE_UNAVAILABLE");
+            return;
+        }
+        String filename = sanitizeFilename(call.getString("filename", DEFAULT_FILENAME));
+        String mimeType = call.getString("mimeType", "application/octet-stream");
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+        values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType == null || mimeType.isBlank() ? "application/octet-stream" : mimeType);
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Float");
+        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+        Uri uri = null;
+        try {
+            uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new IOException("无法创建下载文件");
+            OutputStream output = getContext().getContentResolver().openOutputStream(uri, "w");
+            if (output == null) throw new IOException("无法打开下载文件");
+            String sessionId = UUID.randomUUID().toString();
+            sessions.put(sessionId, new SaveSession(uri, output, true));
+            JSObject resultData = new JSObject();
+            resultData.put("sessionId", sessionId);
+            call.resolve(resultData);
+        } catch (Exception error) {
+            if (uri != null) getContext().getContentResolver().delete(uri, null, null);
+            call.reject("无法写入 Download/Float", error);
         }
     }
 
@@ -117,6 +153,11 @@ public class NativeFileSaverPlugin extends Plugin {
         try {
             session.output.flush();
             session.output.close();
+            if (session.pendingMediaStore && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                getContext().getContentResolver().update(session.uri, values, null, null);
+            }
             JSObject resultData = new JSObject();
             resultData.put("uri", session.uri.toString());
             call.resolve(resultData);
@@ -127,11 +168,15 @@ public class NativeFileSaverPlugin extends Plugin {
 
     @PluginMethod
     public void abortSave(PluginCall call) {
-        closeSession(call.getString("sessionId"));
+        closeSession(call.getString("sessionId"), true);
         call.resolve();
     }
 
     private void closeSession(String sessionId) {
+        closeSession(sessionId, false);
+    }
+
+    private void closeSession(String sessionId, boolean deletePending) {
         if (sessionId == null) return;
         SaveSession session = sessions.remove(sessionId);
         if (session == null) return;
@@ -139,11 +184,14 @@ public class NativeFileSaverPlugin extends Plugin {
             session.output.close();
         } catch (IOException ignored) {
         }
+        if (deletePending && session.pendingMediaStore) {
+            getContext().getContentResolver().delete(session.uri, null, null);
+        }
     }
 
     @Override
     protected void handleOnDestroy() {
-        for (String sessionId : sessions.keySet()) closeSession(sessionId);
+        for (String sessionId : sessions.keySet()) closeSession(sessionId, true);
         super.handleOnDestroy();
     }
 }
