@@ -1,7 +1,9 @@
 package com.floatapp.mobile;
 
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -116,6 +118,35 @@ public class NativeFileSaverPlugin extends Plugin {
         } catch (Exception error) {
             if (uri != null) getContext().getContentResolver().delete(uri, null, null);
             call.reject("无法写入 Download/Float", error);
+        }
+    }
+
+    @PluginMethod
+    public void queueDownload(PluginCall call) {
+        String url = call.getString("url", "").trim();
+        String filename = sanitizeFilename(call.getString("filename", DEFAULT_FILENAME));
+        String mimeType = call.getString("mimeType", "application/octet-stream");
+        if (!url.startsWith("https://")) {
+            call.reject("资源下载只允许 HTTPS 地址");
+            return;
+        }
+        try {
+            DownloadManager manager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+            if (manager == null) throw new IOException("系统下载服务不可用");
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+            request.setTitle(filename);
+            request.setDescription("Float 资源集市");
+            request.setMimeType(mimeType == null || mimeType.isBlank() ? "application/octet-stream" : mimeType);
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setAllowedOverMetered(true);
+            request.setAllowedOverRoaming(true);
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Float/" + filename);
+            long downloadId = manager.enqueue(request);
+            JSObject resultData = new JSObject();
+            resultData.put("downloadId", Long.toString(downloadId));
+            call.resolve(resultData);
+        } catch (Exception error) {
+            call.reject("无法启动系统下载", error);
         }
     }
 

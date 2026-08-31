@@ -13,6 +13,7 @@ type NativeFileSaverPlugin = {
     writeChunk(options: { sessionId: string; data: string }): Promise<void>;
     finishSave(options: { sessionId: string }): Promise<{ uri: string }>;
     abortSave(options: { sessionId: string }): Promise<void>;
+    queueDownload(options: { url: string; filename: string; mimeType?: string }): Promise<{ downloadId: string }>;
 };
 
 const NativeFileSaver = registerPlugin<NativeFileSaverPlugin>("NativeFileSaver");
@@ -119,6 +120,18 @@ export async function downloadFile(blob: Blob, filename: string, options: Downlo
 
     anchorDownload();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function downloadRemoteFile(url: string, filename: string): Promise<void> {
+    const saveMode = resolveDownloadSaveMode({
+        androidNative: Capacitor.getPlatform() === "android" && Capacitor.isNativePlatform(),
+        directRemoteDownload: true,
+    });
+    if (saveMode === "android-download-manager") {
+        await NativeFileSaver.queueDownload({ url, filename });
+        return;
+    }
+    await downloadUrl(url, filename);
 }
 
 export async function downloadUrl(url: string, filename: string): Promise<void> {

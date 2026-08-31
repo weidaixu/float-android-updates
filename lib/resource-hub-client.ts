@@ -302,10 +302,9 @@ export async function fetchShareIndex(source: ResourceHubSource): Promise<ShareI
 // ── 下载 ──
 
 export async function downloadResourceHubFile(source: ResourceHubSource, path: string): Promise<void> {
-    const buffer = await fetchResourceHubBinary(source, path);
     const filename = stripAssetImageMark(path.split("/").pop() || "resource");
-    const { downloadFile } = await import("./download-utils");
-    await downloadFile(new Blob([buffer]), filename, { automaticAndroidSave: true });
+    const { downloadRemoteFile } = await import("./download-utils");
+    await downloadRemoteFile(resolveResourceHubAssetUrl(source, path), filename);
 }
 
 // ── 导入 ──
